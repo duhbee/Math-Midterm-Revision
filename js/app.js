@@ -173,8 +173,8 @@
   <div class="side">
    <div class="eyebrow">Midterm test</div>
    <h2>CSD3241 · Weeks 1–5</h2>
-   <dl class="kv"><dt>When</dt><dd>Tue 13 Oct 2026, 1–3 pm</dd><dt>Duration</dt><dd>1 h 30 min</dd><dt>Format</dt><dd>15–20 MCQ, lab computers (SEB)</dd><dt>Sheet</dt><dd>Formula sheet provided</dd></dl>
-   <ul class="checks"><li>Weeks 1–5 lecture material</li><li>MGFs will <b>not</b> be tested</li><li>"None of These" is often right — compute, don't guess</li><li>Check your lab &amp; seat (announced Week 7)</li></ul>
+   <dl class="kv"><dt>When</dt><dd>Tue 13 Oct 2026, 1:10–2:40 pm</dd><dt>Venue</dt><dd>E2 lab — arrive early</dd><dt>Duration</dt><dd>90 min</dd><dt>Format</dt><dd>15–20 MCQ, lab computers (SEB)</dd><dt>Sheet</dt><dd>Formula sheet provided</dd></dl>
+   <ul class="checks"><li>Weeks 1–5 lecture material</li><li>MGFs will <b>not</b> be tested</li><li>"None of These" is often right — compute, don't guess</li><li>E2 lab · check your seat · arrive before 1:10</li></ul>
   </div>
   <div class="card" style="margin-top:18px">
    <div class="eyebrow">Method recognition</div>
