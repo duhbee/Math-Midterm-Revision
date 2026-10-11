@@ -129,7 +129,7 @@
     const r = parts[0] || 'home';
     const nav = { practice: 'home', method: 'notes' };
     document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.r === (nav[r] || r)));
-    const views = { home: viewHome, finder: viewFinder, spot: viewSpot, notes: viewNotes, method: viewMethod, bank: viewBank, practice: viewPractice, drills: viewDrills, mock: viewMock, sheet: viewSheet, progress: viewProgress };
+    const views = { home: viewHome, cram: viewCram,finder: viewFinder, spot: viewSpot, notes: viewNotes, method: viewMethod, bank: viewBank, practice: viewPractice, drills: viewDrills, mock: viewMock, sheet: viewSheet, progress: viewProgress };
     (views[r] || viewHome)(parts[1]);
     window.scrollTo(0, 0);
   }
@@ -150,7 +150,7 @@
    <div class="card-h"><h2>Train method recognition</h2><span class="step">01 / SPOT</span></div>
    <div class="modes">
     <button class="mode" data-act="goto" data-v="#/spot"><span class="ic">◎</span><b>Spot the method</b><span>Read only the question. Pick the method in seconds. The give-away phrases light up after.</span><span class="tag">Fast</span></button>
-    <button class="mode" data-act="goto" data-v="#/finder"><span class="ic">⌥</span><b>Method finder</b><span>Decision tree + cue-word decoder for when you are stuck in the test.</span><span class="tag">Lookup</span></button>
+    <button class="mode on" data-act="goto" data-v="#/cram"><span class="ic">⚑</span><b>Cram: 1 day left</b><span>The 10 question shapes, the first line to write for each, and today's timetable.</span><span class="tag">Start here</span></button>
     <button class="mode" data-act="goto" data-v="#/mock"><span class="ic">▣</span><b>Mock midterm</b><span>18 MCQ, 1 h 30, Weeks 1–5, no MGF. Graded by question AND method.</span><span class="tag">Exam</span></button>
    </div>
   </section>
@@ -186,6 +186,30 @@
  </aside>
 </div>
 <p class="foot">Built from the CSD3241 Week 1–6 slides, tutorials, homework and quiz reviews. Answers were re-computed; where the Moodle key differs from a naive reading (e.g. Quiz 1 Q5, Q9), the solution explains why.</p>`;
+  }
+
+  /* ========== CRAM (1-day plan) ========== */
+  const cramDone = store.get('cram', {});
+  const cramPool = (t) => QS.filter((q) => !isNT(q) && (t.m.includes(q.m[0]) || (t.any || []).some((m) => q.m.includes(m))));
+  const bySrc = (s) => QS.find((q) => q.src === s);
+  function viewCram() {
+    $app.innerHTML = `<div class="eyebrow">Cram · exam tomorrow</div><h1>10 shapes. Learn the first line of each.</h1>
+<p class="lede">You have done these questions before — what's missing is knowing how to <i>start</i>. Almost every quiz and homework question is one of these 10 shapes. Learn each trigger and skeleton; the rest is arithmetic.</p>
+<div class="grid"><div>
+${CRAM.map((t) => {
+      const p = cramPool(t), seen = p.filter((q) => hist[q.id]), ok = seen.filter((q) => hist[q.id].last).length, ex = bySrc(t.ex);
+      return `<section class="card cram" id="c${t.n}"><div class="card-h"><h2>${t.n}. ${t.title}</h2><span class="step">${seen.length ? pct(ok, seen.length) + '% right (' + seen.length + ' done)' : p.length + ' questions'}</span></div>
+<p><b>Trigger:</b> ${t.trigger}</p>
+<pre class="skel">${t.skel}</pre>
+<p class="trap">${t.hook}</p>
+<details class="terms"><summary>Worked example — ${t.ex}</summary><p>${ex.text}</p><p><b>Answer:</b> ${ex.ans}</p>${ex.steps}</details>
+<div class="row"><button class="btn sm" data-act="cram-do" data-v="${t.n}">Do 3 now →</button><a class="step" href="#/method/${t.m[0]}">full method card</a>
+<label class="chk"><input type="checkbox" data-act="cram-tick" data-v="c${t.n}" ${cramDone['c' + t.n] ? 'checked' : ''}> I can write this skeleton from memory</label></div></section>`;
+    }).join('')}</div>
+<aside><div class="side"><div class="eyebrow">Today's timetable</div>
+${PLAN.map(([id, h, d]) => `<label class="plan"><input type="checkbox" data-act="cram-tick" data-v="${id}" ${cramDone[id] ? 'checked' : ''}><span><b>${h}</b><br>${d}</span></label>`).join('')}
+<p class="step">${PLAN.filter(([id]) => cramDone[id]).length}/${PLAN.length} blocks · ${CRAM.filter((t) => cramDone['c' + t.n]).length}/10 skeletons memorised</p></div>
+<div class="card" style="margin-top:18px"><div class="eyebrow">In the exam</div>${ROUTINE}</div></aside></div>`;
   }
 
   /* ========== METHOD FINDER ========== */
@@ -393,7 +417,7 @@ ${o ? `<div class="explain"><b>Answer:</b> ${q.ans}${q.steps}</div>` : ''}</div>
     $app.innerHTML = `<div class="qwrap"><div class="eyebrow">${S.mode === 'timed' ? 'Timed set' : 'Study session'} · results</div>
  <div class="score">${got} / ${S.ids.length}</div><p class="lede">${pct(got, S.ids.length)}% correct${mN ? ` · methods named right ${mOk}/${mN}` : ''} · time ${fmt((Date.now() - S.start) / 1000)}</p>
  <div class="card"><h2>By week</h2>${bars(rows, (k) => WK[k].week + ' · ' + WK[k].title)}</div>
- <div class="row noprint"><button class="btn" data-act="retrywrong" ${wrong.length ? '' : 'disabled'}>Retry ${wrong.length} wrong</button><button class="btn ghost" data-act="goto" data-v="#/">New session</button>
+ <div class="row noprint"><button class="btn" data-act="retrywrong" ${wrong.length ? '' : 'disabled'}>Retry ${wrong.length} wrong</button><button class="btn ghost" data-act="goto" data-v="#/cram">Back to Cram</button><button class="btn ghost" data-act="goto" data-v="#/">New session</button>
   <button class="btn ghost" data-act="toggleall">${S.showAll ? 'Show wrong only' : 'Show all'}</button></div>
  ${(S.showAll ? S.ids : wrong).map((id) => reviewQ(QQ[id], S.ans[id], S.meth[id])).join('') || '<div class="empty">Nothing wrong. Nice.</div>'}</div>`;
   }
@@ -441,7 +465,7 @@ ${needM ? '' : `<form data-act="dr-check" class="row"><input type="text" id="dri
 <div class="grid"><div class="card"><h2>Choose a paper</h2><p>Papers A–C are fixed so you can retake them. Random draws a new mix.</p>
 <div class="modes">${[['A', 11], ['B', 22], ['C', 33]].map(([n, s]) => `<button class="mode" data-act="mock-start" data-v="${s}" data-n="Paper ${n}"><span class="ic">▣</span><b>Paper ${n}</b><span>18 MCQ · 1:30:00</span><span class="tag">Fixed</span></button>`).join('')}</div>
 <div class="row"><button class="btn" data-act="mock-start" data-v="rand" data-n="Random paper">Random paper →</button></div></div>
-<aside class="side"><div class="eyebrow">Exam tips</div><ul class="checks"><li>~5 min per question — name the method in the first 15 s</li><li>Conditional? write P(A∩B)/P(B) before any numbers</li><li>Convert λ to the asked time window</li><li>"None of These" is right surprisingly often — finish the arithmetic</li><li>Use the formula sheet's z-table: round z to 2 dp</li></ul>
+<aside class="side"><div class="eyebrow">Routine for every question</div>${ROUTINE}<div class="eyebrow" style="margin-top:12px">Exam tips</div><ul class="checks"><li>~5 min per question — name the method in the first 15 s</li><li>Conditional? write P(A∩B)/P(B) before any numbers</li><li>Convert λ to the asked time window</li><li>"None of These" is right surprisingly often — finish the arithmetic</li><li>Use the formula sheet's z-table: round z to 2 dp</li></ul>
 ${h.length ? `<h3>Past attempts</h3>${h.slice(-6).reverse().map((x) => `<p class="step">${x.name} · ${x.score}/${x.n} · ${new Date(x.at).toLocaleDateString()}</p>`).join('')}` : ''}</aside></div>`;
   }
   function mockQuestion() {
@@ -526,6 +550,13 @@ ${mh.length ? `<div class="card"><h2>Mock history</h2>${mh.map((x) => `<p class=
       case 'start': { const p = pool(); const n = prefs.count === 'all' ? p.length : Math.min(prefs.count, p.length); startSession(balancedPick(p, n).map((q) => q.id), prefs.mode, prefs.mfirst); break; }
       case 'practise-week': startSession(balancedPick(QS.filter((q) => q.wk === v && !isNT(q)), 15).map((q) => q.id), 'study', true); break;
       case 'practise-method': startSession(shuffle(QS.filter((q) => q.m.includes(v))).map((q) => q.id), 'study', false); break;
+      /* cram */
+      case 'cram-do': {
+        const t = CRAM[+v - 1], p = cramPool(t);
+        const fresh = shuffle(p.filter((q) => !(hist[q.id] && hist[q.id].last))), rest = shuffle(p.filter((q) => !fresh.includes(q)));
+        startSession(fresh.concat(rest).slice(0, 3).map((q) => q.id), 'study', true); break;
+      }
+      case 'cram-tick': cramDone[v] = el.checked; store.set('cram', cramDone); break;
       /* finder */
       case 'tr-go': TR.path.push(v); route(); break;
       case 'tr-back': TR.path = TR.path.slice(0, +v + 1); route(); break;
@@ -581,7 +612,7 @@ ${mh.length ? `<div class="card"><h2>Mock history</h2>${mh.map((x) => `<p class=
       /* progress */
       case 'drill-wrong': startSession(shuffle(Object.keys(hist).filter((id) => QQ[id] && !hist[id].last)), 'study', true); break;
       case 'reset-all':
-        if (confirm('Erase all answers, method stats and mock history on this device?')) { ['hist', 'mhist', 'conf', 'mockHist', 'sess', 'mock'].forEach(store.del); location.reload(); }
+        if (confirm('Erase all answers, method stats and mock history on this device?')) { ['hist', 'mhist', 'conf', 'mockHist', 'sess', 'mock', 'cram'].forEach(store.del); location.reload(); }
         break;
     }
   });
