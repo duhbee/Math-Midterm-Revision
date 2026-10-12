@@ -129,7 +129,7 @@
     const r = parts[0] || 'home';
     const nav = { practice: 'home', method: 'notes' };
     document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.r === (nav[r] || r)));
-    const views = { home: viewHome, cram: viewCram,finder: viewFinder, spot: viewSpot, notes: viewNotes, method: viewMethod, bank: viewBank, practice: viewPractice, drills: viewDrills, mock: viewMock, sheet: viewSheet, progress: viewProgress };
+    const views = { home: viewHome, cram: viewCram, endless: viewEndless,finder: viewFinder, spot: viewSpot, notes: viewNotes, method: viewMethod, bank: viewBank, practice: viewPractice, drills: viewDrills, mock: viewMock, sheet: viewSheet, progress: viewProgress };
     (views[r] || viewHome)(parts[1]);
     window.scrollTo(0, 0);
   }
@@ -149,6 +149,7 @@
   <section class="card">
    <div class="card-h"><h2>Train method recognition</h2><span class="step">01 / SPOT</span></div>
    <div class="modes">
+    <button class="mode" data-act="goto" data-v="#/endless"><span class="ic">∞</span><b>Endless practice</b><span>Every question, over and over. Wrong ones come back in 3; fresh-number versions mixed in.</span><span class="tag">Keep going</span></button>
     <button class="mode" data-act="goto" data-v="#/spot"><span class="ic">◎</span><b>Spot the method</b><span>Read only the question. Pick the method in seconds. The give-away phrases light up after.</span><span class="tag">Fast</span></button>
     <button class="mode on" data-act="goto" data-v="#/cram"><span class="ic">⚑</span><b>Cram: 1 day left</b><span>The 10 question shapes, the first line to write for each, and today's timetable.</span><span class="tag">Start here</span></button>
     <button class="mode" data-act="goto" data-v="#/mock"><span class="ic">▣</span><b>Mock midterm</b><span>18 MCQ, 1 h 30, Weeks 1–5, no MGF. Graded by question AND method.</span><span class="tag">Exam</span></button>
@@ -192,8 +193,83 @@
   const cramDone = store.get('cram', {});
   const cramPool = (t) => QS.filter((q) => !isNT(q) && (t.m.includes(q.m[0]) || (t.any || []).some((m) => q.m.includes(m))));
   const bySrc = (s) => QS.find((q) => q.src === s);
+  /* ========== ENDLESS (spaced repetition over every question) ========== */
+  const GAP = [3, 8, 25, 60];           // turns until a question comes back, by box (wrong → box 0)
+  const GENMAP = {}; Object.keys(GEN).forEach((k) => { for (let i = 0; i < 5; i++) GENMAP[k] = GEN[k].gen().m[0]; });
+  let E = Object.assign({ turn: 0, box: {}, due: {}, order: null, cur: null, ans: null, meth: null, wk: 'all', mfirst: true, gen: true, streak: 0, best: 0, right: 0, done: 0, lastWrong: [] }, store.get('endless', {}));
+  const saveE = () => store.set('endless', E);
+  const ePool = () => QS.filter((q) => !isNT(q) && (E.wk === 'all' || q.wk === E.wk));
+  function eNext() {
+    E.turn++; E.ans = null; E.meth = null;
+    const pool = ePool(), ids = pool.map((q) => q.id);
+    if (!E.order || E.order.some((id) => !QQ[id])) E.order = shuffle(QS.map((q) => q.id));
+    // every 4th turn: fresh numbers for a shape you recently missed (or any shape)
+    if (E.gen && E.turn % 4 === 0) {
+      const keys = Object.keys(GEN).filter((k) => E.wk === 'all' || MT[GENMAP[k]].wk === E.wk);
+      const miss = keys.filter((k) => E.lastWrong.includes(GENMAP[k]));
+      const k = (miss.length ? miss : keys)[Math.floor(Math.random() * (miss.length ? miss.length : keys.length))];
+      if (k) { const g = GEN[k].gen(); E.cur = Object.assign({ id: 'gen', kind: 'num', src: 'Fresh numbers · ' + GEN[k].name, set: 'new', wk: MT[g.m[0]].wk, cue: [], tol: 0.002 }, g); E.mopts = methodOpts(E.cur, Math.random); saveE(); return; }
+    }
+    const due = ids.filter((id) => E.box[id] != null && E.due[id] <= E.turn && (!E.cur || E.cur.id !== id)).sort((a, b) => E.due[a] - E.due[b]);
+    const unseen = E.order.filter((id) => ids.includes(id) && E.box[id] == null);
+    // retries and new questions alternate, so a run of mistakes never blocks new material
+    let id = E.wasRetry && unseen.length ? unseen[0] : due[0] || unseen[0];
+    E.wasRetry = !!(id && due[0] === id);
+    if (!id) { const rest = ids.filter((x) => !E.cur || E.cur.id !== x).sort((a, b) => (E.box[a] - E.box[b]) || (E.due[a] - E.due[b])); id = rest[0] || ids[0]; }
+    E.cur = { id }; E.mopts = methodOpts(QQ[id], Math.random);
+    if (QQ[id].kind === 'mcq') E.opts = optionOrder(QQ[id], Math.random);
+    saveE();
+  }
+  function eGrade(q, ok) {
+    E.done++; if (ok) { E.right++; E.streak++; E.best = Math.max(E.best, E.streak); } else { E.streak = 0; E.lastWrong = [q.m[0]].concat(E.lastWrong.filter((m) => m !== q.m[0])).slice(0, 5); }
+    if (q.id !== 'gen') {
+      record(q.id, ok);
+      const b = ok ? Math.min(3, (E.box[q.id] == null ? 0 : E.box[q.id]) + 1) : 0;
+      E.box[q.id] = b; E.due[q.id] = E.turn + (ok ? GAP[b] : GAP[0]);
+    }
+    saveE();
+  }
+  function viewEndless() {
+    if (!E.cur || (E.cur.id !== 'gen' && !QQ[E.cur.id])) eNext();
+    const q = E.cur.id === 'gen' ? E.cur : QQ[E.cur.id], answered = E.ans != null;
+    const needM = E.mfirst && E.meth == null && !answered;
+    const pool = ePool(), mastered = pool.filter((x) => E.box[x.id] >= 2).length, seen = pool.filter((x) => E.box[x.id] != null).length;
+    const dueN = pool.filter((x) => E.box[x.id] === 0).length;
+    const ok = answered && isRight(q, E.ans);
+    const [txt, miss] = hl(q.text, E.meth != null || answered ? q.cue : []);
+    let body = '';
+    if (!needM) {
+      if (q.kind === 'mcq') body = `<div class="opts">${E.opts.map((o, k) => {
+        let cls = ''; if (answered) { if (o === q.ans) cls = 'ok'; else if (o === E.ans) cls = 'no'; }
+        return `<button class="opt ${cls}" data-act="e-choose" data-v="${k}" ${answered ? 'disabled' : ''}><span class="k">${LET[k]}</span><span>${o}</span></button>`;
+      }).join('')}</div>`;
+      else body = `<form class="row" data-act="e-num"><input type="text" id="enum" autocomplete="off" placeholder="Number, fraction (4/7) or %" style="width:260px" value="${esc(E.ans || '')}" ${answered ? 'disabled' : ''}>${answered ? '' : '<button class="btn sm">Check</button><button type="button" class="btn ghost sm" data-act="e-giveup">Show me</button>'}</form>`;
+    }
+    $app.innerHTML = `<div class="qwrap">
+<div class="eyebrow">Endless practice · never runs out</div>
+<div class="row"><div class="seg"><button class="${E.wk === 'all' ? 'on' : ''}" data-act="e-wk" data-v="all">All weeks</button>${WEEKS.map((w) => `<button class="${E.wk === w.id ? 'on' : ''}" data-act="e-wk" data-v="${w.id}">${w.week}</button>`).join('')}</div></div>
+<div class="row"><label class="chk"><input type="checkbox" data-act="e-mfirst" ${E.mfirst ? 'checked' : ''}> Name the method first</label>
+<label class="chk"><input type="checkbox" data-act="e-gen" ${E.gen ? 'checked' : ''}> Every 4th: same shape, fresh numbers</label></div>
+<div class="stats"><div class="stat"><b>${mastered}/${pool.length}</b><span>mastered (right twice in a row)</span></div><div class="stat"><b>${seen}/${pool.length}</b><span>seen</span></div>
+<div class="stat"><b>${dueN}</b><span>wrong — coming back soon</span></div><div class="stat"><b>${E.streak}</b><span>streak (best ${E.best})</span></div></div>
+<div class="bar" style="margin:4px 0 14px"><i style="width:${pct(mastered, pool.length)}%"></i></div>
+<div class="card qcard"><div class="qmeta"><span class="pill">${WK[q.wk].week}</span><span class="pill">${q.src}</span>${q.id !== 'gen' && E.box[q.id] === 0 ? '<span class="pill">retry</span>' : ''}</div>
+<div class="qtext">${txt}</div>
+${E.mfirst ? `<div class="mstep"><div class="step">STEP 1 · WHICH METHOD?</div><div class="mopts">${E.mopts.map((m) => {
+      let cls = ''; const shown = E.meth != null || answered; if (shown) { if (q.m.includes(m)) cls = 'ok'; else if (m === E.meth) cls = 'no'; }
+      return `<button class="mopt ${cls}" data-act="e-m" data-v="${m}" ${shown ? 'disabled' : ''}>${MT[m].name}</button>`;
+    }).join('')}</div>${E.meth != null ? `<div class="mfb ${q.m.includes(E.meth) ? 'good' : 'bad'}">${q.m.includes(E.meth) ? '✓ Right method.' : '✗ It\'s ' + MT[q.m[0]].name + '.'} ${chain(q)}${miss.length && q.cue.length ? ` · signals: ${miss.map((c) => `<span class="cue">${c}</span>`).join(' ')}` : ''}<br><small>${MT[q.m[0]].recipe[0]}</small></div>` : ''}</div>` : ''}
+${needM ? '' : (E.mfirst ? '<div class="step" style="margin:14px 0 8px">STEP 2 · ANSWER</div>' : '') + body}
+${answered ? `<div class="explain ${ok ? 'good' : 'bad'}"><b>${ok ? 'Correct.' : 'Not quite — this one comes back in a few questions.'}</b> Answer: ${q.ans}${q.steps}<small>Method: ${chain(q)}</small>${recipe(q.m[0], true)}</div>
+<div class="qnav"><span></span><button class="btn" data-act="e-next">Next →</button></div>` : ''}
+</div>
+<p class="foot">Wrong answers return after 3 questions; right ones return later and later. Keys: 1–4 method · A–E answer · Enter next. <button class="linkbtn" data-act="e-reset">Reset endless progress</button></p></div>`;
+    const inp = document.getElementById('enum'); if (inp && !answered) inp.focus();
+  }
+
   function viewCram() {
     $app.innerHTML = `<div class="eyebrow">Cram · exam tomorrow</div><h1>10 shapes. Learn the first line of each.</h1>
+<div class="row"><a class="btn" href="#/endless">∞ Endless practice — just keep doing questions →</a></div>
 <p class="lede">You have done these questions before — what's missing is knowing how to <i>start</i>. Almost every quiz and homework question is one of these 10 shapes. Learn each trigger and skeleton; the rest is arithmetic.</p>
 <div class="grid"><div>
 ${CRAM.map((t) => {
@@ -557,6 +633,15 @@ ${mh.length ? `<div class="card"><h2>Mock history</h2>${mh.map((x) => `<p class=
         startSession(fresh.concat(rest).slice(0, 3).map((q) => q.id), 'study', true); break;
       }
       case 'cram-tick': cramDone[v] = el.checked; store.set('cram', cramDone); break;
+      /* endless */
+      case 'e-m': if (E.meth == null) { E.meth = v; if (E.cur.id === 'gen') saveE(); else recordMethod(QQ[E.cur.id], v); saveE(); route(); } break;
+      case 'e-choose': { if (E.ans != null) break; const q = QQ[E.cur.id]; E.ans = E.opts[+v]; eGrade(q, E.ans === q.ans); route(); break; }
+      case 'e-giveup': { const q = E.cur.id === 'gen' ? E.cur : QQ[E.cur.id]; E.ans = '—'; eGrade(q, false); route(); break; }
+      case 'e-next': eNext(); route(); break;
+      case 'e-wk': E.wk = v; eNext(); route(); break;
+      case 'e-mfirst': E.mfirst = el.checked; saveE(); route(); break;
+      case 'e-gen': E.gen = el.checked; saveE(); break;
+      case 'e-reset': if (confirm('Reset endless mastery?')) { E = { turn: 0, box: {}, due: {}, order: null, cur: null, wk: E.wk, mfirst: E.mfirst, gen: E.gen, streak: 0, best: 0, right: 0, done: 0, lastWrong: [] }; eNext(); route(); } break;
       /* finder */
       case 'tr-go': TR.path.push(v); route(); break;
       case 'tr-back': TR.path = TR.path.slice(0, +v + 1); route(); break;
@@ -612,7 +697,7 @@ ${mh.length ? `<div class="card"><h2>Mock history</h2>${mh.map((x) => `<p class=
       /* progress */
       case 'drill-wrong': startSession(shuffle(Object.keys(hist).filter((id) => QQ[id] && !hist[id].last)), 'study', true); break;
       case 'reset-all':
-        if (confirm('Erase all answers, method stats and mock history on this device?')) { ['hist', 'mhist', 'conf', 'mockHist', 'sess', 'mock', 'cram'].forEach(store.del); location.reload(); }
+        if (confirm('Erase all answers, method stats and mock history on this device?')) { ['hist', 'mhist', 'conf', 'mockHist', 'sess', 'mock', 'cram', 'endless'].forEach(store.del); location.reload(); }
         break;
     }
   });
@@ -634,6 +719,11 @@ ${mh.length ? `<div class="card"><h2>Mock history</h2>${mh.map((x) => `<p class=
       if (S.mode === 'study') record(id, isRight(QQ[id], v)); else if (S.i < S.ids.length - 1) S.i++;
       saveS(); route(); return;
     }
+    if (act === 'e-num') {
+      e.preventDefault();
+      const v = document.getElementById('enum').value.trim(); if (!v || E.ans != null) return;
+      const q = E.cur.id === 'gen' ? E.cur : QQ[E.cur.id]; E.ans = v; eGrade(q, isRight(q, v)); route(); return;
+    }
     if (act === 'dr-check') {
       e.preventDefault();
       const raw = document.getElementById('drin').value.trim(); if (!raw) return;
@@ -649,7 +739,11 @@ ${mh.length ? `<div class="card"><h2>Mock history</h2>${mh.map((x) => `<p class=
     const r = location.hash.replace(/^#\/?/, '').split('/')[0];
     const k = e.key.toLowerCase();
     const click = (sel) => { const b = $app.querySelector(sel); if (b && !b.disabled) b.click(); };
-    if (r === 'spot') {
+    if (r === 'endless') {
+      if ('1234'.includes(k) && k) { const b = $app.querySelectorAll('[data-act="e-m"]')[+k - 1]; if (b && !b.disabled) b.click(); }
+      else if ('abcde'.includes(k) && k) click(`[data-act="e-choose"][data-v="${'abcde'.indexOf(k)}"]`);
+      else if (k === 'enter' || k === 'arrowright') click('[data-act="e-next"]');
+    } else if (r === 'spot') {
       if ('1234'.includes(k) && k) { const b = $app.querySelectorAll('[data-act="sp-pick"]')[+k - 1]; if (b && !b.disabled) b.click(); }
       else if (k === 'enter') click('[data-act="sp-next"]');
     } else if (r === 'practice' && S && !S.done) {
